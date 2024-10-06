@@ -6,9 +6,9 @@ namespace Cryptor {
             if (reverse) {
                 cmd += "-reverse";
             }
-            cmd += " -- " + path;
+            cmd += " -- \"" + path + "\"";
 
-            var sp = new Subprocess.newv (cmd.split (" "), SubprocessFlags.STDIN_PIPE | SubprocessFlags.STDERR_PIPE | SubprocessFlags.STDOUT_PIPE);
+            var sp = new Subprocess.newv (parseCommand (cmd), SubprocessFlags.STDIN_PIPE | SubprocessFlags.STDERR_PIPE | SubprocessFlags.STDOUT_PIPE);
             sp.communicate_utf8 (password + "\n" + password + "\n", null, null, out standard_error);
             var status = sp.get_exit_status ();
 
@@ -29,8 +29,8 @@ namespace Cryptor {
             if (custom_options != "") {
                 cmd += custom_options;
             }
-            cmd += " -- " + path + " " + mountpoint;
-            var sp = new Subprocess.newv (cmd.split (" "), SubprocessFlags.STDIN_PIPE | SubprocessFlags.STDERR_PIPE | SubprocessFlags.STDOUT_PIPE);
+            cmd += " -- \"" + path + "\" \"" + mountpoint + "\"";
+            var sp = new Subprocess.newv (parseCommand (cmd), SubprocessFlags.STDIN_PIPE | SubprocessFlags.STDERR_PIPE | SubprocessFlags.STDOUT_PIPE);
             sp.communicate_utf8 (password + "\n", null, null, out standard_error);
             var status = sp.get_exit_status ();
 
@@ -69,6 +69,61 @@ namespace Cryptor {
 
         private static string remove_color (string str) {
             return str.replace ("\033[31m", "").replace ("\033[33m", "").replace ("\033[0m", "");
+        }
+
+        /**
+         * Parse a command-line command formatted as a string into an array of strings formatted for {@link GLib.Subprocess}
+         * 
+         * Handles quotes, escaped spaces ("\ "), and spaces. Anything else that could break up a string into multiple arguments is not currently handled.
+         * 
+         * @param cmd The command to parse
+         * 
+         * @return An array made up of the command and arguments. Each element in the array is a distinct argument.
+         */
+        private static string[] parseCommand (string cmd) {
+            bool inDoubleQuotedString = false;
+            bool inSingleQuotedString = false;
+            var currentArg = new StringBuilder ();
+            string[] parsedCommand = new string[0];
+
+            for (int i = 0; i < cmd.length - 1; i++) {
+                if (cmd[i] == '\"' && !inSingleQuotedString) {
+                    if (inDoubleQuotedString) {
+                        inDoubleQuotedString = false;
+                    } else {
+                        inDoubleQuotedString = true;
+                    }
+
+                    continue; // Including double quotes in arguments breaks Subprocess
+                }
+
+                if (cmd[i] == '\'' && !inDoubleQuotedString) {
+                    if (inSingleQuotedString) {
+                        inSingleQuotedString = false;
+                    } else {
+                        inSingleQuotedString = true;
+                    }
+
+                    continue;
+                }
+
+                if (cmd[i] == ' ') {
+                    if (!inDoubleQuotedString && !inSingleQuotedString && cmd[i - 1] != '\\') {
+                        parsedCommand += currentArg.str;
+                        currentArg.erase ();
+                    } else {
+                        currentArg.append (" ");
+                    }
+                } else {
+                    currentArg.append_unichar (cmd[i]);
+                }
+            }
+
+            if (currentArg.str != "") {
+                parsedCommand += currentArg.str;
+            }
+
+            return parsedCommand;
         }
     }
 }
